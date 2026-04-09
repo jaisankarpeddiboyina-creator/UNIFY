@@ -1,8 +1,11 @@
 const fetch = require('node-fetch');
 const categories = require('../config/categories');
+const logger = require('../config/logger');
 
 const API_TIMEOUT = parseInt(process.env.API_TIMEOUT_MS) || 8000;
 const MAX_API_CALLS = parseInt(process.env.MAX_API_CALLS) || 5;
+const MAX_RETRIES = parseInt(process.env.MAX_RETRIES) || 2;
+const RETRY_DELAY_MS = parseInt(process.env.RETRY_DELAY_MS) || 500;
 
 /**
  * Fisher-Yates shuffle — unbiased, unlike sort(() => Math.random() - 0.5)
@@ -50,9 +53,9 @@ function buildUrl(api, query) {
 }
 
 /**
- * Execute one API call with timeout.
+ * Execute one API call with timeout and retry logic.
  */
-async function callOneAPI(api, query, timeoutMs = API_TIMEOUT) {
+async function callOneAPI(api, query, timeoutMs = API_TIMEOUT, retryCount = 0) {
   const callUrl = buildUrl(api, query);
 
   if (api.callType === 'direct_image') {
@@ -70,7 +73,9 @@ async function callOneAPI(api, query, timeoutMs = API_TIMEOUT) {
     clearTimeout(timer);
 
     if (!response.ok) {
-      return { success: false, apiName: api.name, error: `HTTP ${response.status}` };
+      const errorMsg = `HTTP ${response.status}`;
+      logger.warn({ apiName: api.name, statusCode: response.status }, errorMsg);
+      return { success: false, apiName: api.name, error: errorMsg };
     }
 
     if (api.extractorType === 'forismatic') {
@@ -80,6 +85,7 @@ async function callOneAPI(api, query, timeoutMs = API_TIMEOUT) {
         const data = JSON.parse(clean);
         return { success: true, apiName: api.name, callType: 'json', callUrl, data };
       } catch (parseErr) {
+        logger.warn({ apiName: api.name, error: parseErr.message }, 'Forismatic parse error');
         return { success: false, apiName: api.name, error: `Forismatic parse error: ${parseErr.message}` };
       }
     }
@@ -89,6 +95,16 @@ async function callOneAPI(api, query, timeoutMs = API_TIMEOUT) {
 
   } catch (err) {
     clearTimeout(timer);
+    
+    // Retry on transient errors (timeout, ECONNREFUSED, etc.)
+    const isTransientError = err.name === 'AbortError' || err.code === 'ECONNREFUSED';
+    if (isTransientError && retryCount < MAX_RETRIES) {
+      logger.info({ apiName: api.name, retryCount: retryCount + 1, maxRetries: MAX_RETRIES }, 'Retrying API call');
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+      return callOneAPI(api, query, timeoutMs, retryCount + 1);
+    }
+
+    logger.warn({ apiName: api.name, error: err.message }, 'API call failed');
     return { success: false, apiName: api.name, error: err.message };
   }
 }
@@ -101,8 +117,7 @@ async function fetchCategory(categoryId, query, apiRegistry) {
   const selectedAPIs = selectAPIs(categoryId, apiRegistry);
   if (selectedAPIs.length === 0) return [];
 
-  // Log which APIs were selected
-  console.log('[UNIFY] category=%s query=%s selected=%s', categoryId, query, selectedAPIs.map(a => a.name).join(', '));
+  logger.info({ category: categoryId, query, apiCount: selectedAPIs.length, apis: selectedAPIs.map(a => a.name) }, 'Executing search');
 
   const promises = selectedAPIs.map(api => callOneAPI(api, query));
   const settledResults = await Promise.allSettled(promises);
@@ -113,9 +128,9 @@ async function fetchCategory(categoryId, query, apiRegistry) {
     const apiName = selectedAPIs[i].name;
     if (settled.status === 'fulfilled') {
       const result = settled.value;
-      console.log('[UNIFY] %s → %s', apiName, result.success ? 'OK' : result.error);
+      logger.info({ apiName, success: result.success, error: result.error }, result.success ? 'API call succeeded' : 'API call failed');
     } else {
-      console.log('[UNIFY] %s → REJECTED: %s', apiName, settled.reason?.message || settled.reason);
+      logger.error({ apiName, reason: settled.reason?.message || settled.reason }, 'API call rejected');
     }
   }
 
@@ -124,6 +139,7 @@ async function fetchCategory(categoryId, query, apiRegistry) {
     .filter(s => s.status === 'fulfilled' && s.value.success)
     .map(s => s.value);
   
+  logger.info({ category: categoryId, successCount: results.length, totalAttempted: selectedAPIs.length }, 'Search completed');
   return results;
 }
 

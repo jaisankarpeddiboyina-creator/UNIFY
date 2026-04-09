@@ -1,0 +1,54 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Backend: install dependencies",
+      "type": "shell",
+      "command": "npm",
+      "args": ["install"],
+      "cwd": "${workspaceFolder}/backend",
+      "group": "build"
+    },
+    {
+      "label": "Backend: run dev server",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "cwd": "${workspaceFolder}/backend",
+      "problemMatcher": [],
+      "isBackground": true,
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Backend: run tests",
+      "type": "shell",
+      "command": "npm",
+      "args": ["test"],
+      "cwd": "${workspaceFolder}/backend",
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "Backend: run tests with coverage",
+      "type": "shell",
+      "command": "npm",
+      "args": ["test", "--", "--coverage"],
+      "cwd": "${workspaceFolder}/backend",
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "Docker: build and run with compose",
+      "type": "shell",
+      "command": "docker-compose",
+      "args": ["up", "--build"],
+      "cwd": "${workspaceFolder}",
+      "problemMatcher": [],
+      "isBackground": true,
+      "group": "build"
+    }
+  ]
+}

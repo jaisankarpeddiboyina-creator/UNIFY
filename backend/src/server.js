@@ -6,8 +6,10 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { extractors } = require('./apis/extractor');
+const logger = require('./config/logger');
 
 const app = express();
+let isReady = false;
 
 // ── Security headers (first) ──────────────────────────────────────────────────
 app.use(helmet({
@@ -16,11 +18,6 @@ app.use(helmet({
 }));
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
-// ALLOWED_ORIGIN supports three modes:
-//   not set / empty  → allows localhost:3000 + localhost:5000 (dev default)
-//   *                → allows all origins (open/public deployment)
-//   https://x.com    → single origin (production lockdown)
-//   https://a.com,https://b.com → comma-separated list
 const rawOrigin = process.env.ALLOWED_ORIGIN || '';
 let corsOrigin;
 if (!rawOrigin) {
@@ -32,10 +29,14 @@ if (!rawOrigin) {
   corsOrigin = list.length === 1 ? list[0] : list;
 }
 app.use(cors({ origin: corsOrigin, methods: ['GET'], optionsSuccessStatus: 200 }));
-console.log(`CORS origin: ${JSON.stringify(corsOrigin)}`);
+logger.info({ corsOrigin }, 'CORS configured');
 
-// ── Request logging ───────────────────────────────────────────────────────────
-app.use(morgan('combined'));
+// ── Request logging (use Winston instead of Morgan for consistency) ──────────
+app.use(morgan('combined', {
+  stream: {
+    write: (message) => logger.info(message.trim())
+  }
+}));
 
 app.use(express.json());
 
@@ -45,14 +46,14 @@ const limiter = rateLimit({
   max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests. Please wait a moment.' }
+  message: { error: 'rate_limited', message: 'Too many requests. Please wait a moment.' }
 });
 app.use('/api/search', limiter);
 
 // ── Load API registry once at startup (app.locals, not global) ───────────────
 const API_REGISTRY = require('../data/apis_production_ready.json').apis;
 app.locals.API_REGISTRY = API_REGISTRY;
-console.log(`Loaded ${API_REGISTRY.length} APIs`);
+logger.info({ apiCount: API_REGISTRY.length }, 'API registry loaded');
 
 // ── Startup validation: check for missing extractors ──────────────────────────
 const activeAPIs = API_REGISTRY.filter(a => a.queryTemplate);
@@ -60,23 +61,53 @@ const missingExtractors = [...new Set(
   activeAPIs.map(a => a.extractorType).filter(t => t && !extractors[t])
 )];
 if (missingExtractors.length > 0) {
-  console.error('[UNIFY] STARTUP ERROR: Missing extractor functions:', missingExtractors);
-  console.error('[UNIFY] Add these to extractor.js before these APIs will work.');
+  logger.error({ missingExtractors }, 'STARTUP ERROR: Missing extractor functions');
+  logger.error('Add these to extractor.js before these APIs will work.');
+} else {
+  logger.info({ activeAPIs: activeAPIs.length }, 'Startup validation: all extractors present ✓');
+  isReady = true;
 }
-console.log(`[UNIFY] Startup validation: ${activeAPIs.length} active APIs, all extractors present ✓`);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api', require('./routes/search'));
 
 // ── 404 for unknown /api/* routes — MUST come before the SPA catch-all ───────
 app.use('/api/*', (req, res) => {
-  res.status(404).json({ error: 'API route not found' });
+  logger.warn({ path: req.path }, 'API route not found');
+  res.status(404).json({ error: 'api_not_found', message: 'API route not found' });
 });
 
-// ── Health check ──────────────────────────────────────────────────────────────
+// ── Health checks ─────────────────────────────────────────────────────────────
+// Liveness probe: Is the server process alive?
+app.get('/health/live', (req, res) => {
+  res.json({
+    status: 'alive',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Readiness probe: Can the server handle requests?
+app.get('/health/ready', (req, res) => {
+  if (!isReady) {
+    logger.warn('Readiness probe failed: extractors not initialized');
+    return res.status(503).json({
+      status: 'not_ready',
+      reason: 'extractors_not_initialized',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  res.json({
+    status: 'ready',
+    apisLoaded: API_REGISTRY.length,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Legacy health endpoint (deprecated, but kept for backward compatibility)
 app.get('/health', (req, res) => {
   res.json({
-    status: 'ok',
+    status: isReady ? 'ok' : 'initializing',
     timestamp: new Date().toISOString(),
     apisLoaded: API_REGISTRY.length
   });
@@ -103,18 +134,18 @@ app.get('*', (req, res) => {
 // ── Start server ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () =>
-  console.log(`UNIFY backend running on port ${PORT}`)
+  logger.info({ port: PORT }, 'UNIFY backend server started')
 );
 
 // ── Graceful shutdown (Docker / Kubernetes safe) ──────────────────────────────
 function shutdown(signal) {
-  console.log(`\n${signal} received — shutting down gracefully`);
+  logger.info({ signal }, 'Shutdown signal received — graceful shutdown initiated');
   server.close(() => {
-    console.log('All connections closed. Exiting.');
+    logger.info('All connections closed. Exiting.');
     process.exit(0);
   });
   setTimeout(() => {
-    console.error('Forcing exit after timeout');
+    logger.error('Forced shutdown after timeout');
     process.exit(1);
   }, 10000);
 }
