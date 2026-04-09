@@ -122,6 +122,11 @@ function extractAll(callResults, categoryId, query, apiRegistry) {
     const extractorType = api.extractorType || '_fallback';
     const fn = extractors[extractorType] || extractors._fallback;
 
+    // Warn if extractorType has no matching function and it's not _fallback
+    if (extractorType !== '_fallback' && !extractors[extractorType]) {
+      console.warn('[UNIFY] No extractor for type "%s" (API: %s) — using fallback', extractorType, result.apiName);
+    }
+
     try {
       const items = fn(result.data, result.apiName, result.callUrl, query, categoryId);
       for (const item of items) {
@@ -138,4 +143,4 @@ function extractAll(callResults, categoryId, query, apiRegistry) {
   return normalised;
 }
 
-module.exports = { extractAll };
+module.exports = { extractAll, extractors };

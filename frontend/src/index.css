@@ -161,6 +161,56 @@ body {
 }
 .state-message.error { color: #dc2626; }
 
+/* SHARE BUTTON & PANEL */
+.share-button-container { position: relative; }
+.share-panel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 1000;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  min-width: 140px;
+  margin-top: 4px;
+}
+.share-option {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  transition: background 0.1s;
+  border-bottom: 1px solid var(--border);
+}
+.share-option:last-child { border-bottom: none; }
+.share-option:hover { background: var(--surface); }
+
+/* RESULTS FOOTER & SHOW MORE */
+.results-footer {
+  display: flex;
+  justify-content: center;
+  padding: 32px 20px;
+  margin-top: 20px;
+}
+.show-more-btn {
+  padding: 10px 24px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.show-more-btn:hover:not(:disabled) { opacity: 0.9; }
+.show-more-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
 /* APP-LEVEL ERROR (categories failed / ErrorBoundary) */
 .app-error {
   display: flex;

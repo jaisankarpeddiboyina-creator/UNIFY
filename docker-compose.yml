@@ -1,0 +1,35 @@
+﻿version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: unify-backend
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=development
+    env_file: ./backend/.env
+    volumes:
+      - ./backend/src:/app/src
+    networks:
+      - unify-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: unify-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+    networks:
+      - unify-network
+
+networks:
+  unify-network:
+    driver: bridge

@@ -19,6 +19,8 @@ export default function Navbar({ onSearch }) {
           placeholder="Search anything..."
           className="search-input"
           autoFocus
+          inputMode="search"
+          enterKeyHint="search"
         />
         <button type="submit" className="search-btn">Search</button>
       </form>

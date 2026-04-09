@@ -101,9 +101,30 @@ async function fetchCategory(categoryId, query, apiRegistry) {
   const selectedAPIs = selectAPIs(categoryId, apiRegistry);
   if (selectedAPIs.length === 0) return [];
 
+  // Log which APIs were selected
+  console.log('[UNIFY] category=%s query=%s selected=%s', categoryId, query, selectedAPIs.map(a => a.name).join(', '));
+
   const promises = selectedAPIs.map(api => callOneAPI(api, query));
-  const results = await Promise.all(promises);
-  return results.filter(r => r.success);
+  const settledResults = await Promise.allSettled(promises);
+  
+  // Log success/failure per API
+  for (let i = 0; i < settledResults.length; i++) {
+    const settled = settledResults[i];
+    const apiName = selectedAPIs[i].name;
+    if (settled.status === 'fulfilled') {
+      const result = settled.value;
+      console.log('[UNIFY] %s → %s', apiName, result.success ? 'OK' : result.error);
+    } else {
+      console.log('[UNIFY] %s → REJECTED: %s', apiName, settled.reason?.message || settled.reason);
+    }
+  }
+
+  // Extract successful results
+  const results = settledResults
+    .filter(s => s.status === 'fulfilled' && s.value.success)
+    .map(s => s.value);
+  
+  return results;
 }
 
 module.exports = { fetchCategory, selectAPIs };

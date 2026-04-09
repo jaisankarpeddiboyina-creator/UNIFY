@@ -11,8 +11,10 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [query, setQuery] = useState('');
   const [categoriesError, setCategoriesError] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const { results, loading, error, hasSearched, search } = useSearch();
 
+  // Load categories on mount
   useEffect(() => {
     fetch('/api/categories')
       .then(res => {
@@ -21,22 +23,45 @@ export default function App() {
       })
       .then(data => {
         setCategories(data);
-        setSelectedCategory(data[0]?.id || null);
+        // Auto-load first category with its defaultQuery
+        if (data.length > 0) {
+          setSelectedCategory(data[0].id);
+          // Use defaultQuery for auto-load
+          if (data[0].defaultQuery) {
+            search(data[0].id, data[0].defaultQuery, 1);
+            setCurrentPage(1);
+          }
+        }
       })
       .catch(err => {
         console.error('Failed to load categories:', err);
         setCategoriesError(true);
       });
-  }, []);
+  }, [search]);
 
   const handleSearch = (q) => {
     setQuery(q);
-    if (selectedCategory) search(selectedCategory, q);
+    setCurrentPage(1); // Reset to page 1 on new search
+    if (selectedCategory) search(selectedCategory, q, 1);
   };
 
   const handleCategorySelect = (categoryId) => {
     setSelectedCategory(categoryId);
-    if (query) search(categoryId, query);
+    setQuery(''); // Clear the search input when switching categories
+    setCurrentPage(1); // Reset pagination
+    
+    // Auto-load the category with its defaultQuery
+    const category = categories.find(c => c.id === categoryId);
+    if (category && category.defaultQuery) {
+      search(categoryId, category.defaultQuery, 1);
+    }
+  };
+
+  const handleShowMore = async (nextPage) => {
+    // Load next page with current query or category's defaultQuery
+    const searchQuery = query || categories.find(c => c.id === selectedCategory)?.defaultQuery || '';
+    await search(selectedCategory, searchQuery, nextPage);
+    setCurrentPage(nextPage);
   };
 
   if (categoriesError) {
@@ -64,6 +89,8 @@ export default function App() {
               error={error}
               hasSearched={hasSearched}
               category={selectedCategory}
+              currentPage={currentPage}
+              onShowMore={handleShowMore}
             />
           </main>
         </div>

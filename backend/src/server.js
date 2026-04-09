@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const { extractors } = require('./apis/extractor');
 
 const app = express();
 
@@ -52,6 +53,17 @@ app.use('/api/search', limiter);
 const API_REGISTRY = require('../data/apis_production_ready.json').apis;
 app.locals.API_REGISTRY = API_REGISTRY;
 console.log(`Loaded ${API_REGISTRY.length} APIs`);
+
+// ── Startup validation: check for missing extractors ──────────────────────────
+const activeAPIs = API_REGISTRY.filter(a => a.queryTemplate);
+const missingExtractors = [...new Set(
+  activeAPIs.map(a => a.extractorType).filter(t => t && !extractors[t])
+)];
+if (missingExtractors.length > 0) {
+  console.error('[UNIFY] STARTUP ERROR: Missing extractor functions:', missingExtractors);
+  console.error('[UNIFY] Add these to extractor.js before these APIs will work.');
+}
+console.log(`[UNIFY] Startup validation: ${activeAPIs.length} active APIs, all extractors present ✓`);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api', require('./routes/search'));

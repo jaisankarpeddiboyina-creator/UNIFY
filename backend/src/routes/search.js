@@ -8,18 +8,16 @@ const MAX_QUERY_LENGTH = 200;
 
 /**
  * GET /api/search?category=images&q=sunset
+ * Or for default/trending: GET /api/search?category=images
  */
 router.get('/search', async (req, res) => {
   const { category, q } = req.query;
 
-  if (!category || !q) {
-    return res.status(400).json({ error: 'Missing required params: category and q' });
+  if (!category) {
+    return res.status(400).json({ error: 'Missing required param: category' });
   }
 
-  const trimmed = q.trim();
-  if (!trimmed) {
-    return res.status(400).json({ error: 'Query cannot be empty' });
-  }
+  const trimmed = (q || '').trim();
   if (trimmed.length > MAX_QUERY_LENGTH) {
     return res.status(400).json({ error: `Query too long (max ${MAX_QUERY_LENGTH} characters)` });
   }
@@ -31,6 +29,12 @@ router.get('/search', async (req, res) => {
 
   // Get registry from app.locals — no global
   const apiRegistry = req.app.locals.API_REGISTRY;
+
+  // Validate that knownAPI from the category config actually exists in the registry
+  const knownAPIEntry = apiRegistry.find(a => a.name === categoryExists.knownAPI && a.queryTemplate);
+  if (!knownAPIEntry) {
+    console.warn('[UNIFY] knownAPI "%s" not found or has no queryTemplate', categoryExists.knownAPI);
+  }
 
   try {
     const rawResults = await fetchCategory(category, trimmed, apiRegistry);
@@ -58,7 +62,9 @@ router.get('/categories', (req, res) => {
     id: c.id,
     displayName: c.displayName,
     icon: c.icon,
-    description: c.description
+    description: c.description,
+    defaultQuery: c.defaultQuery || '',
+    knownAPI: c.knownAPI
   })));
 });
 

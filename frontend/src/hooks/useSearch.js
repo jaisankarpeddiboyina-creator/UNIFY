@@ -9,8 +9,8 @@ export function useSearch() {
   // Keep a ref to the active AbortController so we can cancel stale requests
   const abortRef = useRef(null);
 
-  const search = useCallback(async (category, q) => {
-    if (!category || !q.trim()) return;
+  const search = useCallback(async (category, q, page = 1) => {
+    if (!category) return;
 
     // Cancel any in-flight request before starting a new one
     if (abortRef.current) {
@@ -22,12 +22,17 @@ export function useSearch() {
     setLoading(true);
     setError(null);
     setHasSearched(true);
+    // Clear results immediately when a new search starts
+    if (page === 1) {
+      setResults([]);
+    }
 
     try {
-      const res = await fetch(
-        `/api/search?category=${category}&q=${encodeURIComponent(q.trim())}`,
-        { signal: controller.signal }
-      );
+      const url = q && q.trim()
+        ? `/api/search?category=${category}&q=${encodeURIComponent(q.trim())}&page=${page}`
+        : `/api/search?category=${category}&page=${page}`;
+
+      const res = await fetch(url, { signal: controller.signal });
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -35,7 +40,13 @@ export function useSearch() {
       }
 
       const data = await res.json();
-      setResults(data.results || []);
+      
+      // Append results for page > 1, replace for page 1
+      if (page > 1) {
+        setResults(prev => [...prev, ...(data.results || [])]);
+      } else {
+        setResults(data.results || []);
+      }
     } catch (err) {
       // AbortError just means a newer search started — not a real error
       if (err.name === 'AbortError') return;
